@@ -205,11 +205,20 @@ function renderResumo() {
 }
 
 function promptTransfer() {
-  const amount = parseFloat(prompt('Valor da retirada (ex: 3000):')?.replace(',', '.'));
-  if (!amount) return;
-  const note = prompt('Observação (opcional):') || '';
-  state.transfers.push({ id: uid(), date: todayISO(), amount, note });
-  save(); render();
+  openFormModal({
+    title: 'Registrar retirada PJ → Pessoal',
+    fields: [
+      { name: 'amount', label: 'Valor', type: 'number', step: '0.01', required: true },
+      { name: 'date', label: 'Data', type: 'date', default: todayISO() },
+      { name: 'note', label: 'Observação (opcional)', type: 'text', default: '' },
+    ],
+    onSubmit: (data) => {
+      const amount = parseFloat(data.amount);
+      if (!amount) return;
+      state.transfers.push({ id: uid(), date: data.date || todayISO(), amount, note: data.note || '' });
+      save(); render();
+    }
+  });
 }
 
 function renderLedger(ledger) {
@@ -321,11 +330,12 @@ function renderLedger(ledger) {
   // handlers
   document.getElementById('btnAddAccount').onclick = () => promptAccount(ledger);
   app.querySelectorAll('[data-del-account]').forEach(b => b.onclick = () => {
-    if (!confirm('Excluir conta e todos os lançamentos ligados a ela?')) return;
-    const id = b.dataset.delAccount;
-    state.accounts = state.accounts.filter(a => a.id !== id);
-    state.transactions = state.transactions.filter(t => t.accountId !== id);
-    save(); render();
+    openConfirmModal('Excluir conta e todos os lançamentos ligados a ela?', () => {
+      const id = b.dataset.delAccount;
+      state.accounts = state.accounts.filter(a => a.id !== id);
+      state.transactions = state.transactions.filter(t => t.accountId !== id);
+      save(); render();
+    });
   });
   app.querySelectorAll('[data-manual]').forEach(b => b.onclick = () => promptTransaction(ledger, b.dataset.manual));
   app.querySelectorAll('[data-import]').forEach(b => b.onclick = () => openPdfModal(ledger, b.dataset.import));
@@ -349,49 +359,130 @@ function palette(n) {
   return Array.from({length:n}, (_,i) => colors[i % colors.length]);
 }
 
-// ===== Forms simples via prompt (rápido de usar, sem telas extras) =====
-function promptAccount(ledger) {
-  const name = prompt('Nome da conta/cartão (ex: Nubank, Itaú, Conta PJ):');
-  if (!name) return;
-  const type = confirm('É um cartão de crédito? OK = cartão, Cancelar = conta corrente') ? 'cartao' : 'conta';
-  let initialBalance = 0;
-  if (type === 'conta') {
-    initialBalance = parseFloat(prompt('Saldo atual dessa conta (ex: 1500.00):')?.replace(',', '.')) || 0;
+// ===== Forms em modal (janelas nativas prompt/confirm não funcionam dentro do Artifact) =====
+function toast(msg) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--panel2,#1e222b);border:1px solid var(--border,#2a2f3a);color:var(--text,#e8eaed);padding:10px 16px;border-radius:8px;font-size:14px;z-index:200;max-width:90vw;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
   }
-  state.accounts.push({ id: uid(), ledger, name, type, initialBalance });
-  save(); render();
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
+function fieldHtml(f) {
+  if (f.type === 'select') {
+    return `<label>${f.label}<select name="${f.name}">${f.options.map(o => `<option value="${o.value}" ${o.value === f.default ? 'selected' : ''}>${o.label}</option>`).join('')}</select></label>`;
+  }
+  if (f.type === 'checkbox') {
+    return `<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" name="${f.name}" ${f.default ? 'checked' : ''}> ${f.label}</label>`;
+  }
+  return `<label>${f.label}<input type="${f.type || 'text'}" name="${f.name}" value="${f.default ?? ''}" ${f.step ? `step="${f.step}"` : ''} ${f.required ? 'required' : ''}></label>`;
+}
+
+function openFormModal(opts) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `<div class="modal" style="max-width:480px">
+    <h2>${opts.title}</h2>
+    <form class="inline" id="genForm">${opts.fields.map(fieldHtml).join('')}</form>
+    <div class="row modal-actions">
+      <button type="button" id="genCancel" class="secondary">Cancelar</button>
+      <button type="submit" form="genForm" id="genSubmit">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#genCancel').onclick = () => backdrop.remove();
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('#genForm').onsubmit = (e) => {
+    e.preventDefault();
+    const data = {};
+    opts.fields.forEach(f => {
+      const el = backdrop.querySelector(`[name="${f.name}"]`);
+      data[f.name] = f.type === 'checkbox' ? el.checked : el.value;
+    });
+    backdrop.remove();
+    opts.onSubmit(data);
+  };
+}
+
+function openConfirmModal(message, onYes) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `<div class="modal" style="max-width:420px">
+    <p>${message}</p>
+    <div class="row modal-actions">
+      <button type="button" id="confNo" class="secondary">Cancelar</button>
+      <button type="button" id="confYes" class="danger">Confirmar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#confNo').onclick = () => backdrop.remove();
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('#confYes').onclick = () => { backdrop.remove(); onYes(); };
+}
+
+function promptAccount(ledger) {
+  openFormModal({
+    title: 'Nova conta ou cartão',
+    fields: [
+      { name: 'name', label: 'Nome (ex: Nubank, Itaú)', type: 'text', required: true },
+      { name: 'type', label: 'Tipo', type: 'select', default: 'conta', options: [{ value: 'conta', label: 'Conta corrente' }, { value: 'cartao', label: 'Cartão de crédito' }] },
+      { name: 'initialBalance', label: 'Saldo atual (se for conta)', type: 'number', step: '0.01', default: '0' },
+    ],
+    onSubmit: (data) => {
+      if (!data.name) return;
+      state.accounts.push({ id: uid(), ledger, name: data.name, type: data.type, initialBalance: data.type === 'conta' ? (parseFloat(data.initialBalance) || 0) : 0 });
+      save(); render();
+    }
+  });
 }
 
 function promptTransaction(ledger, accountId) {
-  const description = prompt('Descrição:');
-  if (!description) return;
-  const amount = Math.abs(parseFloat(prompt('Valor (ex: 89.90):')?.replace(',', '.')));
-  if (!amount) return;
-  const kind = confirm('É uma despesa? OK = despesa, Cancelar = receita') ? 'debito' : 'credito';
-  const date = prompt('Data (AAAA-MM-DD):', todayISO()) || todayISO();
-  let installmentCurrent = 1, installmentTotal = 1;
-  const acc = state.accounts.find(a => a.id === accountId);
-  if (acc && acc.type === 'cartao' && kind === 'debito') {
-    const parc = prompt('Parcelas (ex: 1 ou 3/10 para parcela atual 3 de 10):', '1');
-    if (parc && parc.includes('/')) {
-      const [c, t] = parc.split('/').map(Number);
-      installmentCurrent = c; installmentTotal = t;
+  openFormModal({
+    title: 'Novo lançamento',
+    fields: [
+      { name: 'description', label: 'Descrição', type: 'text', required: true },
+      { name: 'amount', label: 'Valor', type: 'number', step: '0.01', required: true },
+      { name: 'kind', label: 'Tipo', type: 'select', default: 'debito', options: [{ value: 'debito', label: 'Despesa' }, { value: 'credito', label: 'Receita' }] },
+      { name: 'date', label: 'Data', type: 'date', default: todayISO() },
+      { name: 'parc', label: 'Parcela (ex: 3/10 — deixe em branco se à vista)', type: 'text', default: '' },
+    ],
+    onSubmit: (data) => {
+      const amount = Math.abs(parseFloat(data.amount));
+      if (!data.description || !amount) return;
+      let installmentCurrent = 1, installmentTotal = 1;
+      if (data.parc && data.parc.includes('/')) {
+        const [c, t] = data.parc.split('/').map(Number);
+        if (c && t) { installmentCurrent = c; installmentTotal = t; }
+      }
+      const category = categorize(data.description);
+      state.transactions.push({ id: uid(), ledger, accountId, date: data.date || todayISO(), description: data.description, amount, kind: data.kind, category, installmentCurrent, installmentTotal });
+      save(); render();
     }
-  }
-  const category = categorize(description);
-  state.transactions.push({ id: uid(), ledger, accountId, date, description, amount, kind, category, installmentCurrent, installmentTotal });
-  save(); render();
+  });
 }
 
 function promptPayable() {
-  const description = prompt('Descrição da conta a pagar:');
-  if (!description) return;
-  const amount = Math.abs(parseFloat(prompt('Valor:')?.replace(',', '.')));
-  if (!amount) return;
-  const dueDate = prompt('Vencimento (AAAA-MM-DD):', todayISO()) || todayISO();
-  const recurring = confirm('É recorrente todo mês? OK = sim, Cancelar = não');
-  state.payables.push({ id: uid(), description, amount, dueDate, recurring, status: 'pendente' });
-  save(); render();
+  openFormModal({
+    title: 'Nova conta a pagar',
+    fields: [
+      { name: 'description', label: 'Descrição', type: 'text', required: true },
+      { name: 'amount', label: 'Valor', type: 'number', step: '0.01', required: true },
+      { name: 'dueDate', label: 'Vencimento', type: 'date', default: todayISO() },
+      { name: 'recurring', label: 'Recorrente todo mês', type: 'checkbox', default: false },
+    ],
+    onSubmit: (data) => {
+      const amount = Math.abs(parseFloat(data.amount));
+      if (!data.description || !amount) return;
+      state.payables.push({ id: uid(), description: data.description, amount, dueDate: data.dueDate || todayISO(), recurring: !!data.recurring, status: 'pendente' });
+      save(); render();
+    }
+  });
 }
 
 // ===== Importação de PDF =====
@@ -452,7 +543,7 @@ function openPdfModal(ledger, accountId) {
     save();
     backdrop.remove();
     render();
-    alert(`${count} transações importadas.`);
+    toast(`${count} transações importadas.`);
   };
 }
 
@@ -537,22 +628,34 @@ function parseStatementLines(text) {
 }
 
 // ===== Backup =====
-document.getElementById('btnBackup').onclick = () => {
+// Dentro do Artifact (claude.ai) o download só funciona via capability "downloads";
+// rodando local (servidor http comum) usamos o download direto do navegador.
+document.getElementById('btnBackup').onclick = async () => {
+  const filename = `financeiro-backup-${todayISO()}.json`;
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  if (window.claude && typeof window.claude.use === 'function') {
+    const downloads = await window.claude.use('downloads').catch(() => null);
+    if (downloads) {
+      try { await downloads.save({ filename, data: blob }); }
+      catch (err) { if (err && err.code !== 'declined') toast('Não consegui salvar o backup: ' + (err.message || err.code)); }
+      return;
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `financeiro-backup-${todayISO()}.json`; a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 };
-document.getElementById('fileRestore').onchange = async (e) => {
+document.getElementById('fileRestore').onchange = (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  if (!confirm('Isso substitui todos os dados atuais pelo backup. Continuar?')) return;
-  const text = await file.text();
-  try {
-    state = JSON.parse(text);
-    save(); render();
-  } catch (err) { alert('Arquivo inválido.'); }
+  openConfirmModal('Isso substitui todos os dados atuais pelo backup. Continuar?', async () => {
+    const text = await file.text();
+    try {
+      state = JSON.parse(text);
+      save(); render();
+    } catch (err) { toast('Arquivo inválido.'); }
+  });
 };
 
 // ===== Tabs =====
