@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financeiro PF/PJ</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <h1>Financeiro</h1>
+  <nav id="ledgerTabs">
+    <button class="tab active" data-ledger="pf">Pessoal</button>
+    <button class="tab" data-ledger="pj">Empresa (PJ)</button>
+    <button class="tab" data-ledger="resumo">Visão Geral</button>
+  </nav>
+  <div class="topbar-actions">
+    <button id="btnBackup">Exportar backup</button>
+    <label class="fileBtn">Importar backup<input type="file" id="fileRestore" accept="application/json" hidden></label>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<template id="tpl-pdf-modal">
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h2>Importar extrato (PDF)</h2>
+      <p class="muted">Selecione o PDF, a carteira e a conta/cartão de destino. As transações extraídas aparecem numa tabela para você revisar e corrigir antes de salvar.</p>
+      <div class="row">
+        <label>PDF: <input type="file" id="pdfFile" accept="application/pdf"></label>
+        <label>Carteira:
+          <select id="pdfLedger"><option value="pf">Pessoal</option><option value="pj">Empresa (PJ)</option></select>
+        </label>
+        <label>Conta/Cartão destino: <select id="pdfAccount"></select></label>
+      </div>
+      <div id="pdfStatus" class="muted"></div>
+      <div id="pdfResults"></div>
+      <div class="row modal-actions">
+        <button id="pdfCancel" class="secondary">Cancelar</button>
+        <button id="pdfConfirm">Salvar transações selecionadas</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
